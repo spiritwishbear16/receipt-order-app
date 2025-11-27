@@ -1,78 +1,93 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-<meta charset="UTF-8">
-<title>收據匯出範例</title>
+<!-- 匯出按鈕，放在頁面任何位置 -->
+<button id="downloadBtn">⬇️ 匯出 PNG 收據</button>
+
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<style>
-  body {
-    font-family: Arial, sans-serif;
-    padding: 20px;
-  }
-  .receipt {
-    width: 320px;
-    border: 1px solid #ccc;
-    padding: 15px;
-    background-color: #fff;
-    margin-bottom: 10px;
-  }
-  .item {
-    margin-bottom: 10px;
-  }
-  .item-name {
-    font-weight: bold;
-  }
-  .item-detail {
-    font-size: 12px;
-    color: #555;
-    margin-left: 5px;
-  }
-  hr {
-    border: 0.5px solid #ccc;
-    margin: 10px 0;
-  }
-  button {
-    padding: 8px 15px;
-    font-size: 14px;
-  }
-</style>
-</head>
-<body>
-
-<div class="receipt" id="receipt">
-  <h3>收據</h3>
-  <div class="item">
-    <div class="item-name">撞色磨毛高腰內搭褲</div>
-    <div class="item-detail">尺寸: M | 顏色: 黑色 | 數量: 2 | 小計: $500</div>
-  </div>
-  <div class="item">
-    <div class="item-name">長袖上衣</div>
-    <div class="item-detail">尺寸: L | 顏色: 灰色 | 數量: 1 | 小計: $290</div>
-  </div>
-  <hr>
-  <div>總計: $790</div>
-</div>
-
-<button id="downloadBtn">⬇️ 匯出 PNG</button>
-
 <script>
-document.getElementById("downloadBtn").addEventListener("click", function() {
-  const receipt = document.getElementById("receipt");
-  
-  html2canvas(receipt, {
-    scale: 2,           // 提高清晰度
-    useCORS: true       // 跨域圖片支援
-  }).then(canvas => {
+function exportReceiptPNG() {
+  // 1️⃣ 從現有介面抓商品資料
+  const items = document.querySelectorAll(".cart-item");
+  if(items.length === 0) {
+    alert("沒有找到商品資料！");
+    return;
+  }
+
+  const itemData = [];
+  items.forEach(item => {
+    // data-name、data-size、data-color、data-price、data-qty
+    itemData.push({
+      name: item.dataset.name,
+      size: item.dataset.size,
+      color: item.dataset.color,
+      price: parseFloat(item.dataset.price),
+      qty: parseInt(item.dataset.qty)
+    });
+  });
+
+  // 2️⃣ 合併同款商品
+  const merged = {};
+  itemData.forEach(it => {
+    const key = `${it.name}|${it.size}|${it.color}`;
+    if(merged[key]) {
+      merged[key].qty += it.qty;
+      merged[key].subtotal += it.price * it.qty;
+    } else {
+      merged[key] = {
+        name: it.name,
+        size: it.size,
+        color: it.color,
+        qty: it.qty,
+        subtotal: it.price * it.qty
+      };
+    }
+  });
+
+  // 3️⃣ 生成隱藏收據 DOM
+  const receipt = document.createElement("div");
+  receipt.style.width = "400px";
+  receipt.style.padding = "15px";
+  receipt.style.background = "#fff";
+  receipt.style.position = "fixed";
+  receipt.style.top = "-10000px"; // 不影響頁面
+  receipt.style.left = "-10000px";
+  receipt.id = "receiptPNG";
+
+  let total = 0;
+  receipt.innerHTML = "<h3>收據</h3>";
+
+  Object.values(merged).forEach(it => {
+    total += it.subtotal;
+    const div = document.createElement("div");
+    div.style.marginBottom = "10px";
+    div.innerHTML = `
+      <div><strong>${it.name}</strong></div>
+      <div style="font-size:12px;color:#555">
+        尺寸: ${it.size} | 顏色: ${it.color} | 數量: ${it.qty} | 小計: $${it.subtotal.toFixed(0)}
+      </div>
+    `;
+    receipt.appendChild(div);
+  });
+
+  const totalDiv = document.createElement("div");
+  totalDiv.style.marginTop = "15px";
+  totalDiv.innerHTML = `<strong>總計: $${total.toFixed(0)}</strong>`;
+  receipt.appendChild(totalDiv);
+
+  document.body.appendChild(receipt);
+
+  // 4️⃣ 生成 PNG
+  html2canvas(receipt, { scale: 2, useCORS: true }).then(canvas => {
     const link = document.createElement("a");
     link.download = "receipt.png";
     link.href = canvas.toDataURL("image/png");
     link.click();
+    document.body.removeChild(receipt); // 匯出完成刪除隱藏 DOM
   }).catch(err => {
     console.error("匯出 PNG 失敗：", err);
     alert("匯出 PNG 失敗，請查看控制台");
+    document.body.removeChild(receipt);
   });
-});
-</script>
+}
 
-</body>
-</html>
+// 5️⃣ 綁定按鈕
+document.getElementById("downloadBtn").addEventListener("click", exportReceiptPNG);
+</script>
