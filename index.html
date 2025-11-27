@@ -1,280 +1,74 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>AI 自動訂單收據（完整版）</title>
+<meta charset="UTF-8">
+<title>收據匯出範例</title>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <style>
-body{margin:0;padding:0;background:#444;display:flex;justify-content:center;min-height:100vh;font-family:'Noto Sans TC', 'Roboto Mono', monospace}
-.receipt{background:#fff;width:100%;max-width:720px;padding:18px;box-sizing:border-box;color:#000}
-.header{display:flex;justify-content:space-between;align-items:flex-start}
-.title{font-size:22px;font-weight:700}
-.row{display:flex;justify-content:space-between;align-items:center}
-.store-name{text-align:center;font-size:20px;font-weight:700;margin:8px 0}
-.divider{border-bottom:1px solid #222;margin:8px 0}
-#item-list{margin-top:6px}
-.item-row{display:flex;gap:12px;align-items:center;padding:6px 0;border-bottom:1px dashed #eee}
-.item-row .name{flex:1}
-.item-row .price,.item-row .qty,.item-row .subtotal{width:100px;text-align:right}
-.controls{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;z-index:999}
-.btn{background:#007bff;color:#fff;padding:10px 14px;border-radius:8px;border:none;cursor:pointer}
-.btn.green{background:#28a745}
-.small{padding:6px 8px;font-size:13px}
-.info-row{display:flex;gap:12px;align-items:center}
-.select{padding:6px;border-radius:6px}
-.delete-btn{cursor:pointer;color:#900;padding:2px 6px}
-.capture-hide *{visibility:hidden}
+  body {
+    font-family: Arial, sans-serif;
+    padding: 20px;
+  }
+  .receipt {
+    width: 300px;
+    border: 1px solid #ccc;
+    padding: 15px;
+    background-color: #fff;
+    margin-bottom: 10px;
+  }
+  .item {
+    margin-bottom: 10px;
+  }
+  .item-name {
+    font-weight: bold;
+  }
+  .item-detail {
+    font-size: 12px;
+    color: #555;
+  }
+  button {
+    padding: 8px 15px;
+    font-size: 14px;
+  }
 </style>
 </head>
 <body>
-<div class="receipt" id="receipt-root">
-  <div class="header">
-    <div>
-      <div class="title">訂 單 收 據 <span style="font-size:12px">(客戶聯)</span></div>
-      <div id="order-no" contenteditable="true">0001-新開</div>
-    </div>
-    <div class="right">
-      <div id="receiver" contenteditable="true" style="font-weight:700">收件人姓名</div>
-      <div id="current-datetime" style="font-size:12px;color:#555"></div>
-    </div>
+
+<div class="receipt" id="receipt">
+  <h3>收據</h3>
+  <div class="item">
+    <div class="item-name">撞色磨毛高腰內搭褲</div>
+    <div class="item-detail">尺寸: M | 顏色: 黑色 | 數量: 2 | 小計: $500</div>
   </div>
-
-  <div class="divider"></div>
-  <div class="store-name">璦坊童裝</div>
-  <div class="divider"></div>
-
-  <div class="row">
-    <div style="font-weight:700">品名</div>
-    <div style="display:flex;gap:12px;width:360px;justify-content:flex-end;font-weight:700">
-      <div style="width:100px;text-align:right">單價</div>
-      <div style="width:100px;text-align:right">數量</div>
-      <div style="width:100px;text-align:right">小計</div>
-    </div>
+  <div class="item">
+    <div class="item-name">長袖上衣</div>
+    <div class="item-detail">尺寸: L | 顏色: 灰色 | 數量: 1 | 小計: $290</div>
   </div>
-
-  <div id="item-list"></div>
-
-  <div class="divider"></div>
-
-  <div style="display:flex;justify-content:space-between;align-items:center">
-    <div>--- 銷售小計 ---</div>
-    <div id="summary">0筆 0 件</div>
-  </div>
-
-  <div class="divider"></div>
-
-  <div style="max-width:420px;margin-left:auto">
-    <div class="info-row"><div>商品金額:</div><div id="product-total" style="margin-left:auto">0</div></div>
-    <div class="info-row"><div>折扣:</div>
-      <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
-        <select id="discount-select" class="select">
-          <option value="0">無</option>
-          <option value="0.3">七折（30% 折扣）</option>
-          <option value="0.2">八折（20% 折扣）</option>
-        </select>
-        <div id="discount-amount">折扣金額：0</div>
-      </div>
-    </div>
-    <div class="info-row"><div>運費:</div><div id="shipping" contenteditable="true" style="margin-left:auto">0</div></div>
-    <div class="divider"></div>
-    <div class="info-row" style="font-weight:700;font-size:18px"><div>應付金額:</div><div id="final-total" style="margin-left:auto">0</div></div>
-  </div>
-
+  <hr>
+  <div>總計: $790</div>
 </div>
 
-<div class="controls">
-  <button class="btn green small" id="ai-btn">🛍 一鍵貼上商品</button>
-  <button class="btn small" id="export-png">⬇️ 匯出 PNG</button>
-  <button class="btn small" id="toggle-capture">切換截圖顯示</button>
-</div>
+<button id="downloadBtn">⬇️ 匯出 PNG</button>
 
 <script>
-// ========== 日期時間 ===========
-function updateDateTime(){
-  const now=new Date();
-  const y=now.getFullYear();
-  const M=String(now.getMonth()+1).padStart(2,'0');
-  const d=String(now.getDate()).padStart(2,'0');
-  const days=['日','一','二','三','四','五','六'];
-  const hh=String(now.getHours()).padStart(2,'0');
-  const mm=String(now.getMinutes()).padStart(2,'0');
-  document.getElementById('current-datetime').textContent = `${y}-${M}-${d}(${days[now.getDay()]}) ${hh}:${mm}`;
-}
-setInterval(updateDateTime,1000); updateDateTime();
-
-// ========== 全域儲存 ===========
-window.items = []; // {key,name,price,qty,subtotal,color,size}
-
-// Utility
-function num(v){ return Number(String(v).replace(/[^\d.-]/g,'')) || 0 }
-function fmt(v){ return Number(v).toLocaleString('en-US').replace(/\.00$/,'') }
-
-// ========== AI 貼上並解析（可多筆） ===========
-async function aiInputPrompt(){
-  const txt = prompt('請貼上客戶訂單內容（多筆以空白行分隔）：');
-  if(!txt) return;
-  parseTextBlocks(txt);
-}
-
-document.getElementById('ai-btn').addEventListener('click', aiInputPrompt);
-
-function parseTextBlocks(text){
-  // normalize
-  const normalized = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').trim();
-  // split by blank line
-  const blocks = normalized.split(/\n\s*\n/).map(b=>b.trim()).filter(Boolean);
-
-  blocks.forEach(block=>{
-    const item = parseOneBlock(block);
-    if(item){ mergeOrPush(item); }
+document.getElementById("downloadBtn").addEventListener("click", function() {
+  const receipt = document.getElementById("receipt");
+  
+  html2canvas(receipt, {
+    scale: 2,           // 提高清晰度
+    useCORS: true       // 跨域圖片支援
+  }).then(canvas => {
+    // 生成 PNG
+    const link = document.createElement("a");
+    link.download = "receipt.png";
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  }).catch(err => {
+    console.error("匯出 PNG 失敗：", err);
+    alert("匯出 PNG 失敗，請查看控制台");
   });
-
-  // parse extras like totals, shipping, receiver
-  parseExtras(normalized);
-  renderItems();
-  updateTotals();
-}
-
-// 解析單筆區塊
-function parseOneBlock(b){
-  // name: text before first "(" or before "Code"
-  const nameMatch = b.match(/^([\s\S]*?)\s*\(/);
-  let name = nameMatch ? nameMatch[1].trim() : ( (b.match(/^(.*)Code/i)||[,'商品'])[1].trim() );
-
-  // color
-  const color = (b.match(/顏色[\s\:\：]*[【\[]?(.*?)[】\]]?(?:\s|$)/i)||['','']).pop().trim();
-  // size
-  const size = (b.match(/尺寸[\s\:\：]*[【\[]?(.*?)[】\]]?(?:\s|$)/i)||['','']).pop().trim();
-  // price: try explicit TWD or 價格 or 金額
-  let price = 0;
-  const p1 = b.match(/TWD\s*([0-9,\.]+)/i) || b.match(/價格[\s\:\：]*[TWD\s]*([0-9,\.]+)/i) || b.match(/金額[\s\:\：]*[TWD\s]*([0-9,\.]+)/i);
-  if(p1) price = num(p1[1]);
-  // fallback: look for number inside parentheses like (TWD 660)
-  if(!price){ const p2 = b.match(/\(.*?([0-9,]{2,}).*?\)/); if(p2) price = num(p2[1]); }
-
-  // qty: if block repeated count will handle merge; sometimes block contains 數量
-  let qty = 1;
-  const q = b.match(/數量[\s\:\：]*([0-9]+)/i);
-  if(q) qty = num(q[1]);
-
-  if(!name) return null;
-  return {key: makeKey(name,color,size,price), name, color, size, price, qty, subtotal: price*qty};
-}
-
-function makeKey(name,color,size,price){ return `${name}||${color||''}||${size||''}||${price||0}` }
-
-// 如果存在相同 key 則合併數量，否則 push
-function mergeOrPush(item){
-  const idx = window.items.findIndex(i=>i.key===item.key);
-  if(idx>=0){ window.items[idx].qty += item.qty; window.items[idx].subtotal = window.items[idx].qty * window.items[idx].price; }
-  else { window.items.push(item); }
-}
-
-// 解析其他資訊（商品總金額、運費、訂單總金額、收件人）
-function parseExtras(text){
-  const prod = text.match(/商品總金額[^0-9\d]*(\d[0-9,]*)/i);
-  const ship = text.match(/運費[^0-9\d]*(\d[0-9,]*)/i);
-  const final = text.match(/訂單總金額[^0-9\d]*(\d[0-9,]*)/i);
-  const receiver = text.match(/收件人[:：]\s*(.+)/i);
-  if(prod) document.getElementById('product-total').textContent = fmt(num(prod[1]));
-  if(ship) document.getElementById('shipping').textContent = fmt(num(ship[1]));
-  if(final) document.getElementById('final-total').textContent = fmt(num(final[1]));
-  if(receiver) document.getElementById('receiver').textContent = receiver[1].trim();
-}
-
-// ========== 顯示與操作 ===========
-function renderItems(){
-  const list = document.getElementById('item-list'); list.innerHTML='';
-  if(window.items.length===0){ list.innerHTML = '<div style="text-align:center;color:#888;padding:10px">目前尚無商品</div>'; return; }
-
-  window.items.forEach(it=>{
-    const r = document.createElement('div'); r.className='item-row dynamic-item-wrapper';
-    r.dataset.key = it.key;
-
-    const name = document.createElement('div'); name.className='name'; name.innerHTML = `<div style="font-weight:600">${escapeHtml(it.name)}</div><div style="font-size:12px;color:#555">${it.color?('顏色:'+escapeHtml(it.color)):''} ${it.size?(' / 尺寸:'+escapeHtml(it.size)):''}</div>`;
-    const price = document.createElement('div'); price.className='price'; price.textContent = fmt(it.price);
-    const qty = document.createElement('div'); qty.className='qty'; qty.contentEditable = true; qty.textContent = it.qty;
-    const subtotal = document.createElement('div'); subtotal.className='subtotal'; subtotal.textContent = fmt(it.subtotal);
-    const del = document.createElement('div'); del.className='delete-btn'; del.textContent='刪除'; del.onclick = ()=>{ window.items = window.items.filter(x=>x.key!==it.key); renderItems(); updateTotals(); };
-
-    // 當使用者修改數量時
-    qty.addEventListener('input', e=>{
-      const v = num(e.target.textContent) || 0;
-      it.qty = v; it.subtotal = it.price * it.qty;
-      renderItems(); updateTotals();
-    });
-
-    r.appendChild(del); r.appendChild(name); r.appendChild(price); r.appendChild(qty); r.appendChild(subtotal);
-    list.appendChild(r);
-  });
-}
-
-function updateTotals(){
-  const productTotal = window.items.reduce((s,i)=>s + (i.price * i.qty), 0);
-  document.getElementById('product-total').textContent = fmt(productTotal);
-
-  // discount select
-  const sel = document.getElementById('discount-select');
-  const rate = Number(sel.value) || 0; // 0.3 means 30% off (七折)
-  const discountAmount = Math.round(productTotal * rate);
-  document.getElementById('discount-amount').textContent = '折扣金額：' + fmt(discountAmount);
-
-  const ship = num(document.getElementById('shipping').textContent);
-  const final = productTotal - discountAmount + (ship||0);
-  document.getElementById('final-total').textContent = fmt(final>=0?final:0);
-
-  document.getElementById('summary').textContent = `${window.items.length}筆 ${window.items.reduce((s,i)=>s+i.qty,0)} 件`;
-}
-
-// 當 user 修改 shipping 或 discount 選擇
-document.getElementById('discount-select').addEventListener('change', updateTotals);
-document.getElementById('shipping').addEventListener('input', ()=>{ updateTotals(); });
-
-// ========== 匯出為 PNG（使用 SVG foreignObject 方法） ===========
-async function exportPNG(){
-  const el = document.getElementById('receipt-root');
-  // 儲存目前高度與寬度
-  const rect = el.getBoundingClientRect();
-  const width = Math.ceil(rect.width);
-  const height = Math.ceil(rect.height);
-
-  // clone and inline styles
-  const clone = el.cloneNode(true);
-  // remove controls from clone if any
-  clone.querySelectorAll('.delete-btn').forEach(n=>n.remove());
-
-  const serialized = new XMLSerializer().serializeToString(clone);
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}'><foreignObject width='100%' height='100%'>${serialized}</foreignObject></svg>`;
-  const blob = new Blob([svg],{type:'image/svg+xml;charset=utf-8'});
-  const url = URL.createObjectURL(blob);
-
-  const img = new Image();
-  img.onload = ()=>{
-    const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    // 白底
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,width,height);
-    ctx.drawImage(img,0,0);
-    URL.revokeObjectURL(url);
-    canvas.toBlob(function(blob2){
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob2); a.download = 'receipt.png'; document.body.appendChild(a); a.click(); a.remove();
-    });
-  };
-  img.onerror = ()=>{ alert('匯出 PNG 失敗（瀏覽器可能限制 foreignObject 轉換）。建議改用截圖工具或使用 Chrome/Firefox。'); URL.revokeObjectURL(url); };
-  img.src = url;
-}
-
-document.getElementById('export-png').addEventListener('click', exportPNG);
-
-document.getElementById('toggle-capture').addEventListener('click', ()=>{
-  document.body.classList.toggle('capture-hide');
 });
-
-// escape
-function escapeHtml(s){ if(!s && s!==0) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-// init
-renderItems(); updateTotals();
 </script>
+
 </body>
 </html>
