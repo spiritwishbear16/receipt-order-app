@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 智能訂單收據</title>
+
+<style>
+/* ===========================
+   你的原版樣式（完全保留）
+   =========================== */
+body {
+    margin: 0;
+    padding: 0;
+    background-color: #444;
+    font-family: 'Roboto Mono','Noto Sans TC', monospace;
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+}
+.receipt {
+    background-color: #fff;
+    width: 100%;
+    max-width: 375px;
+    padding: 20px 15px 40px 15px;
+    box-sizing: border-box;
+    font-size: 13px;
+    line-height: 1.4;
+    color: #000;
+    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+}
+[contenteditable="true"] {
+    outline: none;
+    border-bottom: 1px dotted transparent;
+}
+.capture-mode [contenteditable="true"]:focus {
+    background-color: #fff !important;
+    border-bottom: 1px dotted transparent !important;
+}
+.header { text-align: center; margin-bottom: 8px; }
+.title { font-size: 22px; font-weight: 700; letter-spacing: 2px; }
+.row { display: flex; justify-content: space-between; align-items: flex-start; }
+.bold { font-weight: 700; }
+.center { text-align: center; }
+.right { text-align: right; }
+.divider-solid { border-bottom: 1.5px solid #000; margin: 6px 0; }
+.divider-dashed { border-bottom: 1px dashed #000; margin: 6px 0; }
+.store-name { font-size: 20px; font-weight: 700; text-align: center; margin: 10px 0 5px 0; }
+.item-block { margin-bottom: 6px; }
+.item-name { display: block; margin-bottom: 2px; }
+
+.dynamic-item-wrapper {
+    position: relative;
+    padding-left: 30px;
+    min-height: 25px;
+}
+.delete-btn {
+    position: absolute;
+    left: 0;
+    top: 0;
+    font-size: 18px;
+    cursor: pointer;
+    background: #f7f7f7;
+    border-radius: 50%;
+    width: 25px;
+    height: 25px;
+    text-align: center;
+    line-height: 25px;
+    user-select: none;
+}
+
+.total-section { margin-top: 10px; }
+.total-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 15px;
+    font-weight: 700;
+    margin: 3px 0;
+}
+.footer { font-size: 11px; margin-top: 10px; line-height: 1.5; }
+
+.capture-mode .delete-btn,
+.capture-mode .add-btn-container,
+.capture-mode .screenshot-btn,
+.capture-mode .ai-btn {
+    display: none!important;
+}
+
+.screenshot-btn, .ai-btn {
+    position: fixed;
+    right: 20px;
+    background-color: #007bff;
+    color: white;
+    padding: 12px 18px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    z-index: 1000;
+    cursor: pointer;
+    font-family: 'Noto Sans TC', sans-serif;
+}
+.ai-btn {
+    bottom: 70px;
+    background: #28a745;
+}
+.screenshot-btn { bottom: 20px; }
+
+</style>
+</head>
+
+<body>
+
+<div class="receipt">
+    <div class="header">
+        <span class="title">訂 單 收 據</span> <span style="font-size:12px;">(客戶聯)</span>
+    </div>
+
+    <div class="row">
+        <span id="order-no" contenteditable="true">0001-新開</span>
+        <div class="right">
+            <span class="bold" style="font-size:16px;" id="receiver" contenteditable="true">收件人姓名</span> 貴下<br>
+            <span style="font-size:11px;" id="current-datetime"></span>
+        </div>
+    </div>
+
+    <div class="divider-solid"></div>
+
+    <div class="store-name" contenteditable="true">璦坊童裝</div>
+    <div class="center" style="font-size:11px;" contenteditable="true">
+        統一編號： 95294390<br>
+        電子信箱：aifangkids@gmail.com
+    </div>
+
+    <div class="divider-solid"></div>
+
+    <div class="row bold" style="font-size:15px;">
+        <span id="short-date"></span>
+        <span id="top-total" contenteditable="true">TWD 0</span>
+        <span>未結帳</span>
+    </div>
+
+    <div class="divider-solid"></div>
+
+    <div class="row" style="font-size:12px;">
+        <span>品名</span>
+        <span>單價 &nbsp; 數量 &nbsp; 金額 (TWD)</span>
+    </div>
+
+    <div class="divider-solid"></div>
+
+    <div id="item-list"></div>
+
+    <div class="divider-solid"></div>
+
+    <div class="row" id="summary-row">
+        <span>--- 銷售小計 ---</span>
+        <span id="summary">0筆 &nbsp; 0 &nbsp; 0</span>
+    </div>
+
+    <div class="divider-solid"></div>
+
+    <div class="total-section">
+        <div class="total-row">
+            <span>商 品 金 額:</span><span id="product-total" contenteditable="true">0</span>
+        </div>
+        
+        <div class="total-row" style="color:#d9534f;"> 
+            <span>優 惠 折 扣:</span><span id="discount" contenteditable="true">0</span>
+        </div>
+        
+        <div class="total-row">
+            <span>單 筆 運 費:</span><span id="shipping" contenteditable="true">60</span>
+        </div>
+
+        <div class="divider-dashed"></div> 
+        
+        <div class="total-row" style="font-size:18px;">
+            <span>應 付 金 額:</span><span id="final-total" contenteditable="true">0</span>
+        </div>
+    </div>
+
+    <div class="divider-solid"></div>
+
+    <div class="footer" contenteditable="true">
+        ==========================<br>
+        ※匯款資訊<br>
+        銀行代碼: 103<br>
+        銀行名稱: 臺灣新光商業銀行 - 斗六分行<br>
+        帳號: [請填寫您的帳號]<br>
+        戶名: [請填寫您的戶名/商號名稱]<br><br>
+        *上述金額已含營業稅<br>
+        *取貨時請務必攜帶與收貨人姓名相同的證件<br>
+        *七天鑑賞期<br>
+    </div>
+</div>
+
+<!-- AI 一鍵貼上 -->
+<button class="ai-btn" onclick="aiInput()">🛍 一鍵貼上商品</button>
+
+<!-- 截圖模式 -->
+<button class="screenshot-btn" onclick="toggleCaptureMode(this)">切換截圖模式</button>
+
+<script>
+/* ==========================
+   自動更新日期時間
+   ========================== */
+function updateDateTime() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const M = String(now.getMonth() + 1).padStart(2,"0");
+    const d = String(now.getDate()).padStart(2,"0");
+    const days = ["日","一","二","三","四","五","六"];
+    const today = `${y}-${M}-${d}(${days[now.getDay()]})`;
+
+    const hh = String(now.getHours()).padStart(2,"0");
+    const mm = String(now.getMinutes()).padStart(2,"0");
+    const ss = String(now.getSeconds()).padStart(2,"0");
+
+    document.getElementById("current-datetime").textContent = `${today} ${hh}:${mm}:${ss}`;
+    document.getElementById("short-date").textContent = `${String(y).slice(-2)}-${M}-${d}(${days[now.getDay()]})`;
+}
+setInterval(updateDateTime, 1000);
+updateDateTime();
+
+/* ==========================
+   開啟 AI 貼上視窗
+   ========================== */
+function aiInput() {
+    let text = prompt("貼上客戶訂單內容：");
+    if (!text) return;
+
+    parseMultiItem(text);
+}
+
+/* ==========================
+   解析多組商品
+   ========================== */
+function parseMultiItem(text) {
+    let blocks = text
+        .split(/\n\s*\n/)  // 空白行分段
+        .map(t => t.trim())
+        .filter(t => t);
+
+    blocks.forEach(b => addOneItemAI(b));
+
+    updateTotals();
+    alert("已加入全部商品！");
+}
+
+/* ==========================
+   AI 智能解析單筆商品
+   ========================== */
+function addOneItemAI(text) {
+    text = text.replace(/✔️/g,"");
+
+    let code = (text.match(/#?([A-Za-z0-9]{3,})/)||["",""])[1];
+    let name = (text.match(/Code.*?\s(.*)/)||["","商品"])[1];
+    name = name.replace(code,"").trim();
+
+    let color = (text.match(/顏色【(.*?)】/)||["",""])[1];
+    let size = (text.match(/尺寸【(.*?)】/)||["",""])[1];
+    if (size.includes("|")) size = size.split("|")[0].trim();
+
+    let price = Number((text.match(/金額
