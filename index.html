@@ -106,6 +106,19 @@ body {
 }
 .screenshot-btn { bottom: 20px; }
 
+/* 表格樣式（簡潔顯示） */
+.item-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: center;
+    font-size: 13px;
+    padding: 6px 0;
+}
+.item-row .name { flex: 1 1 auto; min-width: 90px; }
+.item-row .price, .item-row .qty, .item-row .subtotal { width: 65px; text-align: right; }
+.item-row .meta { font-size: 11px; color: #666; }
+.no-items { text-align: center; color: #888; padding: 8px 0; font-size: 13px; }
 </style>
 </head>
 
@@ -144,12 +157,14 @@ body {
 
     <div class="row" style="font-size:12px;">
         <span>品名</span>
-        <span>單價 &nbsp; 數量 &nbsp; 金額 (TWD)</span>
+        <span>單價 &nbsp; 數量 &nbsp; 小計</span>
     </div>
 
     <div class="divider-solid"></div>
 
-    <div id="item-list"></div>
+    <div id="item-list">
+        <div class="no-items" id="no-items">目前尚無商品，請使用「🛍 一鍵貼上商品」或手動新增。</div>
+    </div>
 
     <div class="divider-solid"></div>
 
@@ -224,42 +239,301 @@ setInterval(updateDateTime, 1000);
 updateDateTime();
 
 /* ==========================
-   開啟 AI 貼上視窗
+   全域商品陣列（存目前畫面商品）
    ========================== */
-function aiInput() {
-    let text = prompt("貼上客戶訂單內容：");
-    if (!text) return;
-
-    parseMultiItem(text);
-}
+window.items = []; // {id, code, name, color, size, price, qty, subtotal}
 
 /* ==========================
-   解析多組商品
+   AI 一鍵貼上解析
+   使用者選擇：範例多行格式（你選 1）
+   抓金額直接使用文字內的金額（你選 2）
+   顯示最簡潔：品名 / 單價 / 數量 / 小計（你選 3）
+   ========================== */
+window.aiInput = function() {
+    let text = prompt("貼上客戶訂單內容（多筆用空白行分隔）：");
+    if (!text) return;
+    parseMultiItem(text);
+};
+
+/* ==========================
+   多筆解析：以空白行分段
    ========================== */
 function parseMultiItem(text) {
-    let blocks = text
-        .split(/\n\s*\n/)  // 空白行分段
-        .map(t => t.trim())
-        .filter(t => t);
+    // 將 CRLF 統一為 \n
+    text = text.replace(/\r\n/g, "\n").trim();
+    // 以兩個以上換行或空白行作為分段
+    let blocks = text.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
 
-    blocks.forEach(b => addOneItemAI(b));
+    blocks.forEach(b => {
+        addOneItemAI(b);
+    });
 
     updateTotals();
     alert("已加入全部商品！");
 }
 
 /* ==========================
-   AI 智能解析單筆商品
+   解析單筆商品（支援你給的範例格式）
+   範例格式：
+   Code #A123 圓領上衣
+   顏色【灰色】
+   尺寸【JM】
+   金額：290
+   數量：2
    ========================== */
 function addOneItemAI(text) {
-    text = text.replace(/✔️/g,"");
+    // 移除多餘符號
+    text = text.replace(/✔️/g, "").trim();
 
-    let code = (text.match(/#?([A-Za-z0-9]{3,})/)||["",""])[1];
-    let name = (text.match(/Code.*?\s(.*)/)||["","商品"])[1];
-    name = name.replace(code,"").trim();
+    // 先逐行切分
+    const lines = text.split(/\n/).map(l => l.trim()).filter(Boolean);
 
-    let color = (text.match(/顏色【(.*?)】/)||["",""])[1];
-    let size = (text.match(/尺寸【(.*?)】/)||["",""])[1];
-    if (size.includes("|")) size = size.split("|")[0].trim();
+    // code: 從包含 Code 或 # 開頭的行找
+    let code = "";
+    for (let ln of lines) {
+        let m = ln.match(/#([A-Za-z0-9\-]+)/);
+        if (m) { code = m[1]; break; }
+        m = ln.match(/\bCode[:#\s]*([A-Za-z0-9\-]+)/i);
+        if (m) { code = m[1]; break; }
+    }
 
-    let price = Number((text.match(/金額
+    // price: 找 "金額" 或 行內帶數字的 pattern
+    let price = null;
+    for (let ln of lines) {
+        let m = ln.match(/金額[:：]?\s*([0-9]+(?:[\.,][0-9]+)?)/);
+        if (m) { price = Number(m[1].replace(",", "").replace("，","")); break; }
+        // 或者像 "290x2" / "290×2" / "290 元"
+        m = ln.match(/([0-9]+(?:[\.,][0-9]+)?)\s*(?:元|TWD)?\s*(?:×|x|X)?\s*([0-9]+)?/);
+        if (m && ln.match(/[0-9]+/)) {
+            // 只在該行沒有中文字（或包含元/×）時當作 fallback
+            if (!ln.match(/[^\d\s\.\,元TWDxX×]/) || ln.includes("元") || ln.includes("×") || ln.includes("x")) {
+                price = Number(m[1].replace(",", ""));
+                // 不直接取 qty，qty 由數量欄位先找
+                break;
+            }
+        }
+    }
+
+    // qty: 找 "數量" 或行尾 × 數字
+    let qty = null;
+    for (let ln of lines) {
+        let m = ln.match(/數量[:：]?\s*([0-9]+)/);
+        if (m) { qty = Number(m[1]); break; }
+        m = ln.match(/(?:×|x|X)\s*([0-9]+)/);
+        if (m) { qty = Number(m[1]); break; }
+    }
+
+    // name: 從第一行去掉 Code/編號後的剩餘文字，或找第一個不含金額/顏色/尺寸/數量 的行
+    let name = "";
+    // 嘗試第一行
+    if (lines.length > 0) {
+        let first = lines[0];
+        // 如果第一行包含 Code，去掉 Code 部分
+        first = first.replace(/\bCode[:#\s]*[A-Za-z0-9\-]+/i, "").trim();
+        first = first.replace(/#([A-Za-z0-9\-]+)/, "").trim();
+        // 如果這行剩下看起來像是名稱（含中文字或英文字）
+        if (first && first.match(/[^\d\:\s]+/)) {
+            name = first;
+        }
+    }
+    // 若 name 還沒取到，找其他可能行
+    if (!name) {
+        for (let ln of lines) {
+            if (/金額|數量|顏色|尺寸|Code|#/i.test(ln)) continue;
+            // 過濾純數字行
+            if (!ln.match(/^[\d\.\,\s×xX元TWD-]+$/)) {
+                name = ln;
+                break;
+            }
+        }
+    }
+
+    // 顏色 / 尺寸（非必要）
+    let color = (text.match(/顏色[：:\s]*[【\[]?(.*?)[】\]]?(?:\s|$)/) || ["",""])[1].trim();
+    let size = (text.match(/尺寸[：:\s]*[【\[]?(.*?)[】\]]?(?:\s|$)/) || ["",""])[1].trim();
+
+    // fallback defaults
+    if (!price) price = 0;
+    if (!qty) qty = 1;
+    if (!name) name = code ? code : "商品";
+
+    // 計算小計（此處依你選擇：使用文字內的金額直接抓取）
+    let subtotal = Number(price) * Number(qty);
+
+    // 建立 item 物件並加入全域陣列
+    const id = 'i' + Date.now() + Math.floor(Math.random()*1000);
+    const item = { id, code, name, color, size, price, qty, subtotal };
+    window.items.push(item);
+
+    // 將它渲染到畫面
+    renderItems();
+}
+
+/* ==========================
+   渲染 items 到 DOM
+   顯示最簡潔：品名 / 單價 / 數量 / 小計（你選 3）
+   ========================== */
+function renderItems() {
+    const wrapper = document.getElementById('item-list');
+    wrapper.innerHTML = '';
+    if (!window.items.length) {
+        document.getElementById('no-items').style.display = 'block';
+        wrapper.appendChild(document.getElementById('no-items'));
+        updateTotals();
+        return;
+    } else {
+        // 移除 no-items (如果在)
+        const ni = document.getElementById('no-items');
+        if (ni) ni.style.display = 'none';
+    }
+
+    window.items.forEach(it => {
+        const row = document.createElement('div');
+        row.className = 'item-row dynamic-item-wrapper';
+        row.dataset.id = it.id;
+
+        // 刪除按鈕
+        const del = document.createElement('div');
+        del.className = 'delete-btn';
+        del.textContent = '×';
+        del.title = '刪除此項目';
+        del.onclick = () => {
+            removeItem(it.id);
+        };
+
+        const name = document.createElement('div');
+        name.className = 'name';
+        name.innerHTML = `<div class="item-name">${escapeHtml(it.name)}${it.color?'<div class="meta">顏色:'+escapeHtml(it.color)+'</div>':''}${it.size?'<div class="meta">尺寸:'+escapeHtml(it.size)+'</div>':''}</div>`;
+
+        const price = document.createElement('div');
+        price.className = 'price';
+        price.contentEditable = true;
+        price.innerText = formatNumber(it.price);
+        price.addEventListener('input', (e) => {
+            const v = parseNumber(e.target.innerText);
+            it.price = isNaN(v)?0:v;
+            it.subtotal = it.price * it.qty;
+            renderItems(); // 重新渲染以更新小計
+            updateTotals();
+        });
+
+        const qty = document.createElement('div');
+        qty.className = 'qty';
+        qty.contentEditable = true;
+        qty.innerText = String(it.qty);
+        qty.addEventListener('input', (e) => {
+            const v = parseInt(e.target.innerText) || 0;
+            it.qty = v;
+            it.subtotal = it.price * it.qty;
+            renderItems();
+            updateTotals();
+        });
+
+        const subtotal = document.createElement('div');
+        subtotal.className = 'subtotal';
+        subtotal.innerText = formatNumber(it.subtotal);
+
+        row.appendChild(del);
+        row.appendChild(name);
+        row.appendChild(price);
+        row.appendChild(qty);
+        row.appendChild(subtotal);
+
+        wrapper.appendChild(row);
+    });
+
+    updateTotals();
+}
+
+/* ==========================
+   移除 item
+   ========================== */
+function removeItem(id) {
+    window.items = window.items.filter(i => i.id !== id);
+    renderItems();
+}
+
+/* ==========================
+   更新總計
+   - product-total: 商品總額（不含運費折扣）
+   - final-total: productTotal - discount + shipping
+   - summary: "筆數 &nbsp; 數量總和 &nbsp; 商品總額"
+   任何 contenteditable 的 discount / shipping / product-total 變更都會重新計算
+   ========================== */
+function updateTotals() {
+    const productTotal = window.items.reduce((s,i)=>s + Number(i.price || 0) * Number(i.qty || 0), 0);
+    const qtyTotal = window.items.reduce((s,i)=>s + Number(i.qty || 0), 0);
+    const count = window.items.length;
+
+    const productTotalElem = document.getElementById('product-total');
+    productTotalElem.innerText = formatNumber(productTotal);
+
+    // 讀取 discount & shipping（如果 user 手動修改，允許為空或非數 -> 0）
+    const discountElem = document.getElementById('discount');
+    const shippingElem = document.getElementById('shipping');
+    let discount = parseNumber(discountElem.innerText || discountElem.textContent) || 0;
+    let shipping = parseNumber(shippingElem.innerText || shippingElem.textContent) || 0;
+
+    // final total
+    const final = Number(productTotal) - Number(discount) + Number(shipping);
+    document.getElementById('final-total').innerText = formatNumber(final >= 0 ? final : 0);
+
+    // update top summary
+    document.getElementById('summary').innerHTML = `${count}筆 &nbsp; ${qtyTotal} &nbsp; ${formatNumber(productTotal)}`;
+
+    // top total (左上大金額)
+    document.getElementById('top-total').innerText = `TWD ${formatNumber(final >= 0 ? final : 0)}`;
+}
+
+/* 當 user 修改 discount / shipping / final 的 contenteditable 時要重新計算 */
+document.addEventListener('input', (e) => {
+    if (!e.target) return;
+    const id = e.target.id;
+    if (id === 'discount' || id === 'shipping' || id === 'product-total' || id === 'final-total') {
+        // 允許 user 修改文字，稍後觸發更新
+        setTimeout(updateTotals, 100);
+    }
+});
+
+/* ==========================
+   截圖模式切換
+   ========================== */
+function toggleCaptureMode(btn) {
+    document.body.classList.toggle("capture-mode");
+    btn.textContent =
+        document.body.classList.contains("capture-mode")
+        ? "解除截圖模式"
+        : "切換截圖模式";
+}
+
+/* ==========================
+   Utilities
+   ========================== */
+function formatNumber(n) {
+    n = Number(n) || 0;
+    return n.toLocaleString('en-US',{maximumFractionDigits:2}).replace(/\.00$/,'');
+}
+function parseNumber(str) {
+    if (typeof str !== 'string') str = String(str);
+    const m = str.replace(/[^\d\.\-]/g, '');
+    return m === '' ? 0 : Number(m);
+}
+function escapeHtml(unsafe) {
+    if (!unsafe && unsafe !== 0) return '';
+    return String(unsafe)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+}
+
+/* ==========================
+   初始 render（若有預設項目可放在這）
+   ========================== */
+renderItems();
+updateTotals();
+</script>
+
+</body>
+</html>
